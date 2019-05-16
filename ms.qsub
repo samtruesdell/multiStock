@@ -1,0 +1,63 @@
+#!/bin/bash -login
+#PBS -l nodes=1:ppn=1,walltime=03:59:59
+#PBS -l mem=1gb
+#PBS -M truesd16@msu.edu
+#PBS -N samjob
+#PBS -l file=10gb
+#PBS -t 1-5
+
+
+# n is the job array id
+n=${PBS_ARRAYID}
+
+# change directory to where the call was from
+cd ${PBS_O_WORKDIR}
+
+# make a directory to hold the runs
+PBSi=1
+if [ $n=$PBSi ]; then
+	# delete the results/figs directory if it exists (rf prevents error)
+  rm -rf ./runs
+	# make a new directory to hold the results/figs
+  mkdir ./runs	
+fi
+
+
+# make a new unique directory
+mkdir ./${n}
+
+cp ms_fun.R ./${n}/ms_fun.R
+cp rtnorm.R ./${n}/rtnorm.R
+cp ms_seed.txt ./${n}/ms_seed.txt
+cp ms_run.R ./${n}/ms_run.R
+
+module load GNU/7.3.0-2.30
+module load OpenMPI/3.1.1
+module load R/3.5.1-X11-20180604
+
+cd ./${n}/
+
+R < ms_run.R --vanilla
+
+cp ./out.Rdata ${PBS_O_WORKDIR}/runs/out${n}.Rdata
+
+# change directory to where the call was from
+cd ${PBS_O_WORKDIR}
+rm -r ${n}
+
+mypid=$!
+wait ${mypid}
+
+
+if [ $n=$PBSi ]; then
+
+	R < ms_agg.R --vanilla
+	R < ms_plot.R --vanilla
+	R < get_utility.R --vanilla
+	
+fi
+
+
+
+#Print out the statistics for this job
+qstat -f ${PBS_JOBID}

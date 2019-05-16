@@ -1,0 +1,12 @@
+#!/bin/bash -login
+#PBS -l nodes=1:ppn=1,walltime=03:59:59
+#PBS -l mem=1gb
+#PBS -M truesd16@msu.edu
+#PBS -N samjobControl
+#PBS -l file=10gb
+
+# change directory to where the call was from
+cd ${PBS_O_WORKDIR}
+
+#qsub < ms_seed.qsub
+qsub < ms.qsub

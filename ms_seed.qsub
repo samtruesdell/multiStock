@@ -1,0 +1,12 @@
+#!/bin/bash -login
+#PBS -l nodes=1:ppn=1,walltime=00:10:00
+#PBS -l mem=1gb
+#PBS -M truesd16@msu.edu
+#PBS -N samjob
+#PBS -l file=1gb
+
+# change directory to where the call was from
+cd ${PBS_O_WORKDIR}
+
+# get the random seed to use in all the simulations
+R < ms_seed.R --vanilla
