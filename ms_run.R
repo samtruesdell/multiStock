@@ -45,6 +45,10 @@ egscalar <- seq(from=0.01, to=2, length.out=5)
 # of mType and EG
 nrepProcess <- 3
 
+# Number of repetitions to average the results over for re-arranging the
+# mType grid (i.e., sampling distribution of stocks)
+nrepGrid <- 10
+
 # number of simulation years (greater than 50)
 ny <- 150
 
@@ -122,8 +126,7 @@ require(mvtnorm)
 require(Matrix)
 
 
-# Determine which stocks will be monitored in this run
-mType <- stock2mon(nstock = max(ns))
+
 
 
 if(pm.yr > (ny-50)){
@@ -133,173 +136,188 @@ if(pm.yr > (ny-50)){
 # baseline random seed for this run
 roundrand <- round(runif(1, 1, 1e6))
 
-# object to save the CVs to review.
-cvSummary <- numeric(0)
+# Loop to repeat sampling of mType
+SR_stats_lst_nrg <- list()
+for(nrg in 1:nrepGrid){
 
-# array to hold the results
-# performance metric array dimensions: (1) scenario sampling distribution
-# type; (2) escapement goal scalar value; (3) performance metric.
-# Performance metrics are: esc, harv, harvR, over, 
-#                          ext ,pFailSub, cvCatch, HRsurplus
-pmU <- array(data=NA, dim=c(nrow(mType), length(egscalar), 8+1))
-pmV <- array(data=NA, dim=c(nrow(mType), length(egscalar), 8+1))
-SR_stats_lst <- list()
-for(u in 1:nrow(mType)){
-
-
+  # Determine which stocks will be monitored in this run
+  mType <- stock2mon(nstock = max(ns))
+  
+  # object to save the CVs to review.
+  cvSummary <- numeric(0)
+  
+  # array to hold the results
+  # performance metric array dimensions: (1) scenario sampling distribution
+  # type; (2) escapement goal scalar value; (3) performance metric.
+  # Performance metrics are: esc, harv, harvR, over, 
+  #                          ext ,pFailSub, cvCatch, HRsurplus
+  pmU <- array(data=NA, dim=c(nrow(mType), length(egscalar), 8+1))
+  pmV <- array(data=NA, dim=c(nrow(mType), length(egscalar), 8+1))
+  SR_stats_lst <- list()
+  for(u in 1:nrow(mType)){
   
   
-  ## Generate some data. This will be used to fit a stock
-  ## recruitment function to. There will be some error
-  ## in the output for harvest.
-  
-  
-  inputs <- list(
-    alpha = alpha,
-    bet = beta,
-    Ro = log(alpha)/beta,
-    ny = ny,
-    rho = rho,
-    phi = phi,
-    Preturn = Preturn,
-    episd = episd,
-    U = U,
-    sub = sub,
-    com = com,
-    egfloor =  egfloor,#5000,
-    pm.yr = pm.yr,
-    for.error = for.error,
-    OU = OU,
-    TV= TV,
-    mTypeV = mType[u,],
-    cvAW = cvAW,
-    # rhoAA = rhoAA,
-    # rhoAW = rhoAW,
-    # rhoWW = rhoWW,
-    cvH = cvH,
-    ESS = ESS,
-    abias = abias,
-    # sirat_sd=sirat_sd,
-		dg = TRUE
-  )
-  
-  pmEG <- matrix(NA, length(egscalar), 8+1)
-  pmsd <- matrix(NA, length(egscalar), 8+1)
-  
-  SR_stats_i <- list()
-  for(d in seq_along(egscalar)){
-    # set.seed(d + roundrand)   ## can't remember rational for this
-    pmsave <- matrix(NA, nrow=nrepProcess, ncol=8+1) #+1 for EG
     
-    i <- 1
-    while(i <= nrepProcess){
-      inputs$com <- comInit
-      srdat <- try(do.call(process, inputs))
-      if(class(srdat) == 'try-error'){
-        break
-      }
-      
-      #### fit an assessment model ####
-      
-      # spawning stock: just SB_e
-      # related recruits have to match ages/years
-      
-      # Get the (estimated) recruits in every year
-      R <- c()
-      for(y in 1:(ny-7)){
-        R[y] <- diag(srdat$paaB_e[(y+4):(y+7),]) %*% # estimated PAA
-          (srdat$SB_e[(y+4):(y+7)] +           # sum of escapement and
-             srdat$HB_e[(y+4):(y+7)])          # catch is total recruits
-      }
-      # print(length(R))
-      # print(length(srdat$SB_e))
-      # stop()
-     
-      
-      
-      # don't need to match S&R indices because just using
-      # the end of both series
-      
-      R <- tail(R, sryrs)
-      S <- tail(srdat$SB_e[1:(ny-7)], sryrs)
-   
-
-      
-      # Calculate the parameters of the Ricker model
-      lnRS <- log(R+1e-5) - log(S+1e-5)
-      SRlm <- try(lm(lnRS ~ S))
-      if(class(SRlm)=='try-error') browser()
-      lRpar <- coef(SRlm)
-      abase <- lRpar[1]
-      bbase <- -lRpar[1] / lRpar[2]
-      # get unbiased estimates (H&W p. 269)
-      sdR <- summary(SRlm)$sigma
-      aprime <- abase + sdR^2/2
-      bprime <- aprime / abase * bbase
-      Rpar <- c(aprime, bprime)
-      
-      # rp[[k]] <- Rpar; k <- k+1
-      # Calculate Smsy
-      Smsy <- Rpar[2] * (0.5 - 0.07 * Rpar[1])
-
-      if(Smsy > 0){
-        
-        inputs2 <- inputs
-        inputs2$egfloor <- Smsy * egscalar[d]
-        inputs2$com <- com
-				inputs2$dg <- FALSE # no longer data generating phase
     
-
-        srdat2 <- try(do.call(process, inputs2))
-        if(class(srdat2) == 'try-error') break
-        
-        # add the actual escapement to the performance measures.
-        pmsave[i,] <- c(srdat2$PMs, inputs2$egfloor)
-        if(d == 1){ # only bother with this in round 1 ... EG scalar
-                    # does not play a role here.
-          mstock <- which(mType[u,] > 0)
-          
-          # Determine the ratio of productivity for the sampled and
-          # unsampled stocks
-          
-          # CV = K / sqrt(a)
-          # Fix the maximum CV at 1.0 and define K from there. Then calculate
-          # the CV for each of the combinations of sampled stocks.
-          maxCV <- 0.5
-          prodSamp <- sum(log(alpha[mstock]) / beta[mstock])
-          K <- sqrt(min(log(alpha) / beta)) * maxCV
-          cv <- K / sqrt(prodSamp)
-          cvSummary <- c(cvSummary, cv)
-          require(msm)
-          prodSampEst <- rtnorm(1, mean=prodSamp, sd=cv*prodSamp, lower=0)
-          
-          rat <- sum(log(alpha) / beta) / prodSampEst
-
-          SR_stats_i[[i]] <- c(u, i, # ~!!!!!unc[u] need name??
-                               Rpar[1], Rpar[2],
-                               Smsy*rat, use.names=FALSE)
+    ## Generate some data. This will be used to fit a stock
+    ## recruitment function to. There will be some error
+    ## in the output for harvest.
+    
+    
+    inputs <- list(
+      alpha = alpha,
+      bet = beta,
+      Ro = log(alpha)/beta,
+      ny = ny,
+      rho = rho,
+      phi = phi,
+      Preturn = Preturn,
+      episd = episd,
+      U = U,
+      sub = sub,
+      com = com,
+      egfloor =  egfloor,#5000,
+      pm.yr = pm.yr,
+      for.error = for.error,
+      OU = OU,
+      TV= TV,
+      mTypeV = mType[u,],
+      cvAW = cvAW,
+      # rhoAA = rhoAA,
+      # rhoAW = rhoAW,
+      # rhoWW = rhoWW,
+      cvH = cvH,
+      ESS = ESS,
+      abias = abias,
+      # sirat_sd=sirat_sd,
+  		dg = TRUE
+    )
+    
+    pmEG <- matrix(NA, length(egscalar), 8+1)
+    pmsd <- matrix(NA, length(egscalar), 8+1)
+    
+    SR_stats_i <- list()
+    for(d in seq_along(egscalar)){
+      # set.seed(d + roundrand)   ## can't remember rational for this
+      pmsave <- matrix(NA, nrow=nrepProcess, ncol=8+1) #+1 for EG
+      
+      i <- 1
+      while(i <= nrepProcess){
+        inputs$com <- comInit
+        srdat <- try(do.call(process, inputs))
+        if(class(srdat) == 'try-error'){
+          break
         }
-        i <- i+1
+        
+        #### fit an assessment model ####
+        
+        # spawning stock: just SB_e
+        # related recruits have to match ages/years
+        
+        # Get the (estimated) recruits in every year
+        R <- c()
+        for(y in 1:(ny-7)){
+          R[y] <- diag(srdat$paaB_e[(y+4):(y+7),]) %*% # estimated PAA
+            (srdat$SB_e[(y+4):(y+7)] +           # sum of escapement and
+               srdat$HB_e[(y+4):(y+7)])          # catch is total recruits
+        }
+        # print(length(R))
+        # print(length(srdat$SB_e))
+        # stop()
+       
+        
+        
+        # don't need to match S&R indices because just using
+        # the end of both series
+        
+        R <- tail(R, sryrs)
+        S <- tail(srdat$SB_e[1:(ny-7)], sryrs)
+     
+  
+        
+        # Calculate the parameters of the Ricker model
+        lnRS <- log(R+1e-5) - log(S+1e-5)
+        SRlm <- try(lm(lnRS ~ S))
+        if(class(SRlm)=='try-error') browser()
+        lRpar <- coef(SRlm)
+        abase <- lRpar[1]
+        bbase <- -lRpar[1] / lRpar[2]
+        # get unbiased estimates (H&W p. 269)
+        sdR <- summary(SRlm)$sigma
+        aprime <- abase + sdR^2/2
+        bprime <- aprime / abase * bbase
+        Rpar <- c(aprime, bprime)
+        
+        # rp[[k]] <- Rpar; k <- k+1
+        # Calculate Smsy
+        Smsy <- Rpar[2] * (0.5 - 0.07 * Rpar[1])
+  
+        if(Smsy > 0){
+          
+          inputs2 <- inputs
+          inputs2$egfloor <- Smsy * egscalar[d]
+          inputs2$com <- com
+  				inputs2$dg <- FALSE # no longer data generating phase
+      
+  
+          srdat2 <- try(do.call(process, inputs2))
+          if(class(srdat2) == 'try-error') break
+          
+          # add the actual escapement to the performance measures.
+          pmsave[i,] <- c(srdat2$PMs, inputs2$egfloor)
+          if(d == 1){ # only bother with this in round 1 ... EG scalar
+                      # does not play a role here.
+            mstock <- which(mType[u,] > 0)
+            
+            # Determine the ratio of productivity for the sampled and
+            # unsampled stocks
+            
+            # CV = K / sqrt(a)
+            # Fix the maximum CV at 1.0 and define K from there. Then calculate
+            # the CV for each of the combinations of sampled stocks.
+            maxCV <- 0.5
+            prodSamp <- sum(log(alpha[mstock]) / beta[mstock])
+            K <- sqrt(min(log(alpha) / beta)) * maxCV
+            cv <- K / sqrt(prodSamp)
+            cvSummary <- c(cvSummary, cv)
+            require(msm)
+            prodSampEst <- rtnorm(1, mean=prodSamp, sd=cv*prodSamp, lower=0)
+            
+            rat <- sum(log(alpha) / beta) / prodSampEst
+  
+            SR_stats_i[[i]] <- c(u, i, # ~!!!!!unc[u] need name??
+                                 Rpar[1], Rpar[2],
+                                 Smsy*rat, use.names=FALSE)
+          }
+          i <- i+1
+        }
+        if(i > 4*nrepProcess){
+          stop('i > 4*nrepProcess')
+        }
+        if(i %*% 5 == 0) print(paste(i, '/', nrepProcess))
       }
-      if(i > 4*nrepProcess){
-        stop('i > 4*nrepProcess')
-      }
-      if(i %*% 5 == 0) print(paste(i, '/', nrepProcess))
+      
+      # save results for that scalar
+      pmEG[d,] <- apply(pmsave, 2, mean)
+      pmsd[d,] <- apply(pmsave, 2, sd)
+      
     }
-    
-    # save results for that scalar
-    pmEG[d,] <- apply(pmsave, 2, mean)
-    pmsd[d,] <- apply(pmsave, 2, sd)
+    SR_stats_lst[[u]] <- do.call(rbind, SR_stats_i)
+    pmU[u,,] <- pmEG
+    pmV[u,,] <- pmsd
     
   }
-  SR_stats_lst[[u]] <- do.call(rbind, SR_stats_i)
-  pmU[u,,] <- pmEG
-  pmV[u,,] <- pmsd
   
+  SR_stats <- do.call(rbind, SR_stats_lst)
+  colnames(SR_stats) <- c('scen', 'i', 'a', 'b', 'SMSY')
+  SR_stats_lst_nrg[[nrg]] <- SR_stats
+  
+  cat('nrg = ', nrg, '\n', sep='')
+  sink()
+
 }
 
-SR_stats <- do.call(rbind, SR_stats_lst)
-colnames(SR_stats) <- c('scen', 'i', 'a', 'b', 'SMSY')
+SRstats <- do.call(rbind, SR_stats_lst_nrg)
 
 #define y range for plotting harvest and escapement
 if(plotvar){
