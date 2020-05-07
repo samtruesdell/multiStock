@@ -3,3 +3,5 @@
 .RData
 .Ruserdata
 *.Rdata
+*.jpg
+param.txt
