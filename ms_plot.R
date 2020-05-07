@@ -79,10 +79,10 @@ jpeg('Smsy_nsamp.jpg')
   
   
   boxplot(SR_stats[,'SMSY'] ~ SR_stats[,'scen'],
-  xlab='Scenario', ylab='Smsy estimate', col=stockpab)
+  xlab='Scenario', ylab='Smsy estimate', col=stockpab, outline=FALSE)
   
   # Old, incorrect method of calculating a multi-stock Smsy
-  # abline(h=sum(log(alpha) / beta * (0.5 - 0.07 * log(alpha))))
+  # abline(h=sum(log(alpha) / beta * (0.5 - 0.07 * log(alpha))), lty=3)
   
   # Correct method for estimating multistock Smsy
   U_range <- seq(0, 1, 0.01)
@@ -109,13 +109,27 @@ sratb <- sapply(srat, function(x) ifelse(x > 0.7, 'cornflowerblue',
 
 
 boxplot(SR_stats[,'SMSY'] ~ SR_stats[,'scen'],
-        xlab='Scenario', ylab='Smsy estimate', col=sratb)
+        xlab='Scenario', ylab='Smsy estimate', col=sratb,ylim=c(0, 10000))
 abline(h = Smsy_multi)
 # divisions for the number of stocks
   abline(v=nstockdiv-0.5, lty=3)
 dev.off()
 
 
+
+### Plot the SR functions
+jpeg('SREstimatePlots.jpg', width=480*1.5)
+  escTemp <- seq(1, 70000, length.out=50)
+  getval <- sapply(1:nrow(SR_stats), function(x)
+    escTemp * exp(SR_stats[x,'a'] * (1-escTemp/SR_stats[x,'b'])))
+  cr <- colorRampPalette(c('firebrick1', 'cornflowerblue'))
+  cols <- cr(ncol(getval))
+  matplot(x=escTemp, getval, type='l', col=cols, lty=1,
+          xlab = 'Escapement', ylab = 'Recruits',
+          main = 'blue = more stocks / more weirs')
+  sapply(1:nrow(SR_stats), function(x)
+    rug(SR_stats[x,'SMSY'], col=cols[x]))
+dev.off()
 
 
 
