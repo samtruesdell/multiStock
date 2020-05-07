@@ -5,8 +5,9 @@ unix <- ifelse(Sys.info()[1] == 'Windows', FALSE, TRUE)
 
 if(unix){
   wdir <- system('pwd', intern=TRUE)
-}else
+}else{
   wdir <- dirname(parent.frame(2)$ofile)
+}
 
 setwd(wdir)
 
@@ -14,11 +15,9 @@ setwd(wdir)
 rseed <- scan('ms_seed.txt')
 
 # load the functions
-source(paste0(wdir, '/ms_fun.R'))
+funLst <- list.files('fun', full.names = TRUE)
+sapply(funLst, source)
 
-# load in rtnorm function for fiddling with normal distribution
-# errors rather than lognormal
-source(paste0(wdir, '/rtnorm.R'))
 
 # number of stocks to be monitored
 ns <- 1:13
@@ -40,16 +39,17 @@ abias <- 0 # percent bias for aerial surveys
 cvH <- 0.2
 
 # escapement goal scalars
-egscalar <- seq(from=0.01, to=2, length.out=20)
+egscalar <- seq(from=0.01, to=2, length.out=5)
 
-# number of repetitions to average the results over
-nrep <- 3
+# number of repetitions to average the results over for each combination
+# of mType and EG
+nrepProcess <- 3
 
 # number of simulation years (greater than 50)
 ny <- 150
 
 # number of years to use to fit SR model
-sryrs <- 50
+sryrs <- 30
 
 # uncertainty in the scalar of Smsy
 # sirat_sd <- 0
@@ -84,6 +84,7 @@ aval <- unlist(mapply(function(x,n) runif(n, abounds[x,1], abounds[x,2]),
 
 bval <- unlist(mapply(function(x,n) runif(n, bbounds[x,1], bbounds[x,2]),
                       1:nrow(bbounds), c(4,5,4)))
+# aval <- rep(aval[1], 13);bval <- rep(bval[1], 13)
 
 # randomize the pairing of alphas and betas.
 if(sbias == 'low' | sbias =='high'){
@@ -117,77 +118,12 @@ TV = "FALSE"
 
 
 
-# type of monitoring for each of the 13 stocks. 0=no monitoring
-# 1=aerial survey and 2=weir
-# Stocks in order of productivity (alpha / (beta * exp(1)))
-# [1:M, 2:M, 3:M, 4:L, 5:H, 6:L, 7:M, 8:L, 9:H, 10:M, 
-#  11:L, 12:L, 13:L]
-# mType <- matrix(data= c(
-#   0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0,
-#   0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2,
-#   0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
-#   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
-# ), byrow=TRUE, ncol=13)
-
-# if(sbias == 'low'){
-#   bprob <- 1/alpha
-# }else if(sbias == 'high'){
-#   bprob <- alpha
-# }else if(sbias == 'none'){
-#   bprob <- rep(1, length(alpha))
-# }else{
-#   stop('error in sample bias assignment')
-# }
-
+require(mvtnorm)
+require(Matrix)
 
 
 # Determine which stocks will be monitored in this run
-wstock <- t(sapply(ns, function(x){
-  n <- 1:13
-  if(sbias == 'low'){
-    set.seed(rseed)
-    s <- n[order(alpha)][1:x]
-  }else if(sbias == 'high'){
-    set.seed(rseed)
-    s <- rev(n[order(alpha)])[1:x]
-  }else if(sbias == 'none'){
-    s <- sample(n, size=x)
-  }else{
-    stop('error in sample bias assignment')
-  }
-  set.seed(NULL)
-  g <- rep(0, 13)
-  g[s] <- 1
-  return(g)
-}))
-
-out <- list()
-k <- 0
-for(i in 1:length(ns)){
-  v <- wstock[i,]
-  k <- k+1
-  out[[k]] <- v
-  if(length(which(v>0)) > 1){
-    whichOne <- sample(which(v > 0))
-  }else{
-    whichOne <- which(v > 0)
-  }
-  for(j in whichOne){
-    v2 <- v
-    v2[j] <- 2
-    k <- k+1
-    out[[k]] <- v2
-    v <- v2
-  }
-}
-
-mType_all <- do.call(rbind, out)
-
-
-# remove any case where there are zero weir surveys
-wNoWeir <- sapply(1:nrow(mType_all),
-                  function(x) any(mType_all[x,] == 2))
-mType <- mType_all[wNoWeir,]
+mType <- stock2mon(nstock = max(ns))
 
 
 if(pm.yr > (ny-50)){
@@ -242,7 +178,7 @@ for(u in 1:nrow(mType)){
     # rhoWW = rhoWW,
     cvH = cvH,
     ESS = ESS,
-    abias=abias,
+    abias = abias,
     # sirat_sd=sirat_sd,
 		dg = TRUE
   )
@@ -252,11 +188,11 @@ for(u in 1:nrow(mType)){
   
   SR_stats_i <- list()
   for(d in seq_along(egscalar)){
-    set.seed(d + roundrand)
-    pmsave <- matrix(NA, nrow=nrep, ncol=8+1) #+1 for EG
+    # set.seed(d + roundrand)   ## can't remember rational for this
+    pmsave <- matrix(NA, nrow=nrepProcess, ncol=8+1) #+1 for EG
     
     i <- 1
-    while(i <= nrep){
+    while(i <= nrepProcess){
       inputs$com <- comInit
       srdat <- try(do.call(process, inputs))
       if(class(srdat) == 'try-error'){
@@ -287,10 +223,7 @@ for(u in 1:nrow(mType)){
       R <- tail(R, sryrs)
       S <- tail(srdat$SB_e[1:(ny-7)], sryrs)
    
-      # S <- runif(sryrs, 0, 100000)
-      # R <- S * exp(1.505456 * (1 - (S/55634.78)))
-      # R <- rlnorm(sryrs, log(R), unc[u])
-      # 
+
       
       # Calculate the parameters of the Ricker model
       lnRS <- log(R+1e-5) - log(S+1e-5)
@@ -304,42 +237,18 @@ for(u in 1:nrow(mType)){
       aprime <- abase + sdR^2/2
       bprime <- aprime / abase * bbase
       Rpar <- c(aprime, bprime)
-      # browser()
       
       # rp[[k]] <- Rpar; k <- k+1
       # Calculate Smsy
       Smsy <- Rpar[2] * (0.5 - 0.07 * Rpar[1])
-      # Smsy_add <- sum(log(alpha) / beta * (0.5 - 0.07 * log(alpha)))
-      # print(Smsy)
-      # print(Smsy_add)
-      # print(bbase * (0.5 - 0.07 * abase))
-      # print('==============')
-      if(Smsy > 0){
-        
-        # s1 <- seq(0, max(S)*2, length.out=100)
-        # r1 <- s1 * exp(-Rpar[1] * (1 - s1/Rpar[2]))
-        # plot(s1, r1, type='l', xlim=c(0, max(s1)))
-        # abline(v=Smsy)
-        # abline(a=0, b=1, lty=2)
 
-        # browser()
-        # 
-        
-        # Use the new Smsy as the escapement goal
-        # (multiplied by a scalar)
+      if(Smsy > 0){
         
         inputs2 <- inputs
         inputs2$egfloor <- Smsy * egscalar[d]
         inputs2$com <- com
 				inputs2$dg <- FALSE # no longer data generating phase
     
-#         si <- which(mType[u,] > 0)
-#         # ratio is that of S@ replacement
-#         sirat <- sum(log(alpha) / beta) / 
-#                       sum(log(alpha[si]) / beta[si])
-#  
-#         sirat <- rlnorm(1, meanlog=log(sirat), sdlog=sirat_sd)
-#         inputs2$egfloor <- inputs2$egfloor * sirat
 
         srdat2 <- try(do.call(process, inputs2))
         if(class(srdat2) == 'try-error') break
@@ -372,10 +281,10 @@ for(u in 1:nrow(mType)){
         }
         i <- i+1
       }
-      if(i > 4*nrep){
-        stop('i > 4*nrep')
+      if(i > 4*nrepProcess){
+        stop('i > 4*nrepProcess')
       }
-      if(i %*% 5 == 0) print(paste(i, '/', nrep))
+      if(i %*% 5 == 0) print(paste(i, '/', nrepProcess))
     }
     
     # save results for that scalar
@@ -434,7 +343,7 @@ if(!unix){
 cat(
     'mType', mType,
     'egscalar', egscalar,
-    'nrep', nrep,
+    'nrepProcess', nrepProcess,
     'ny', ny,
     'sryrs', sryrs,
     # 'sdlog_e', sdlog_e,
