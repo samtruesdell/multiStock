@@ -1,0 +1,8 @@
+ms_run.R: 
+  line 49: do we really need to run for 150 years; would fewer years save a bit of computing time?
+  lines 93-94: why do you need to sample from aval and bval? They are already random samples based on the empirial samples, 
+               and resampling will "undo" the stratification into three groups, I think
+  lines 100: Smsy_approx here is calculated by finding the maximum total catch summed across all substocks (within the eq_ricker function)
+             and is different from the Smsy_sum caclulated in the function because this sum presumed each stock can be exploited at 
+             it's msy level (this is a potentially interested pair of quantities to compare - related to Brendans's paper)
+  
