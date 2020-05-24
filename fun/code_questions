@@ -5,4 +5,10 @@ ms_run.R:
   lines 100: Smsy_approx here is calculated by finding the maximum total catch summed across all substocks (within the eq_ricker function)
              and is different from the Smsy_sum caclulated in the function because this sum presumed each stock can be exploited at 
              it's msy level (this is a potentially interested pair of quantities to compare - related to Brendans's paper)
-  
+  lines 103-117: not sure why this code is here, and what some of the variables represent (e.g., episd, pm.yr); ditto lines 129-131
+stock2mon.R:
+  I'm not sure I understand what's going on here. Why does the selection of stocks to monitor depend on bias conditions? Perhaps this is to
+  select either the most productive or the least productive stocks to monitor? Is this an important question/factor to consider?
+process.R: 
+  this is where the dynamic model is run; it is called twice - once for the data generating phase (with potentially a range of egoals
+  over time, and a second time for the forecasting phase when egoal stays the same for each management scenario.
