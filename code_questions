@@ -2,9 +2,10 @@ ms_run.R:
   line 49: do we really need to run for 150 years; would fewer years save a bit of computing time?
   lines 93-94: why do you need to sample from aval and bval? They are already random samples based on the empirial samples, 
                and resampling will "undo" the stratification into three groups, I think
-  lines 100: Smsy_approx here is calculated by finding the maximum total catch summed across all substocks (within the eq_ricker function)
-             and is different from the Smsy_sum caclulated in the function because this sum presumed each stock can be exploited at 
-             it's msy level (this is a potentially interested pair of quantities to compare - related to Brendans's paper)
+  lines 100: Smsy_approx here is calculated by finding the escapement associated with the maximum total catch summed across all substocks
+             for a shared exploitation rate (within the eq_ricker function), whereas Smsy_sum is the cumulative escapement associated 
+             with the maximum catch for each stock exploited at it's own MSY rate (in effect assuming each stock can have a distinct U) 
+             This is a potentially interesteing pair of quantities to compare - related to Brendans's paper.
   lines 103-117: not sure why this code is here, and what some of the variables represent (e.g., episd, pm.yr); ditto lines 129-131
                  update: now I see these are all defined in process.R
 stock2mon.R:
