@@ -144,10 +144,10 @@ cvSummary <- numeric(0)
 pmU <- array(data=NA, dim=c(nrow(mType), length(egscalar), 8+1))
 pmV <- array(data=NA, dim=c(nrow(mType), length(egscalar), 8+1))
 SR_stats_lst <- list()
-for(u in 1:nrow(mType)){
+#get rid of loop over monitoring scenarios  (MJ)
+#for(u in 1:nrow(mType)){
+u <- 5  #pick an arbitrary scenario (ML)
 
-
-  
   
   ## Generate some data. This will be used to fit a stock
   ## recruitment function to. There will be some error
@@ -296,7 +296,7 @@ for(u in 1:nrow(mType)){
   pmU[u,,] <- pmEG
   pmV[u,,] <- pmsd
   
-}
+# }  end of former monitorting scenario loop (MJ)
 
 SR_stats <- do.call(rbind, SR_stats_lst)
 colnames(SR_stats) <- c('scen', 'i', 'a', 'b', 'SMSY')
@@ -333,8 +333,8 @@ if(!unix){
   mres <- pmU
   metaType <- list(mType)
   metaNS <- list(ns)
-  source('ms_plot.r')
-  source('../get_utility.r')
+#  source('ms_plot.r')   
+#  source('../get_utility.r')
 }
 
 
