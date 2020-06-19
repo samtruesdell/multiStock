@@ -28,7 +28,7 @@ sbias <- 'none'
 
 # CVs for aerial surveys [1] and weirs [2] and ESS for weirs
 # and correlations btw aerial surveys and weirs
-cvAW <- c(1, 0.1)
+cvAW <- c(1, 0.1) #adjust cvs here
 # rhoAA <- 0.1
 # rhoAW <- 0.75
 # rhoWW <- 0.01
