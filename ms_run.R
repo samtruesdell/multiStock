@@ -28,7 +28,7 @@ sbias <- 'none'
 
 # CVs for aerial surveys [1] and weirs [2] and ESS for weirs
 # and correlations btw aerial surveys and weirs
-cvAW <- c(1, 0.1) #adjust cvs here
+cvAW <- c(1,.1) # turn off assessment error c(1, 0.1)
 # rhoAA <- 0.1
 # rhoAW <- 0.75
 # rhoWW <- 0.01
@@ -36,14 +36,14 @@ ESS <- 50
 abias <- 0 # percent bias for aerial surveys
 
 # CV for the harvest of every stock
-cvH <- 0.2
+cvH <- 0.2 # turn off harvest error 0.2   ###
 
 # escapement goal scalars
 egscalar <- seq(from=0.01, to=2, length.out=5)
 
 # number of repetitions to average the results over for each combination
 # of mType and EG
-nrepProcess <- 3
+nrepProcess <- c(5 ,10, 25, 50, 100) #, 250)
 
 # number of simulation years (greater than 50)
 ny <- 150
@@ -78,6 +78,13 @@ bbounds <- matrix(c(0.001, 0.003,
                     0.0001, 0.00055),
                   nrow = 3, byrow = TRUE)
 
+# test: set alpha and beta the same for all stocks
+abounds <- matrix(rep(20,6),
+                  nrow = 3, byrow = TRUE)
+
+bbounds <- matrix(rep(.001,6),
+                  nrow = 3, byrow = TRUE)
+
 # choose 13 alpha and betas
 aval <- unlist(mapply(function(x,n) runif(n, abounds[x,1], abounds[x,2]),
                       1:nrow(abounds), c(4,5,4)))
@@ -104,7 +111,7 @@ Ro = 2*log(alpha)/beta
 rho = 0.4 # among-stock correlation
 phi = 0.65 #0.85 # annual correlation
 Preturn = c(.2, .39, .38, .03)
-episd = 0.6
+episd = 0.01  # should be... 0.6
 U = 0.1 #doesn't matteR???
 sub = 0 #42500
 com = 1e6#35000
@@ -146,7 +153,9 @@ pmV <- array(data=NA, dim=c(nrow(mType), length(egscalar), 8+1))
 SR_stats_lst <- list()
 #get rid of loop over monitoring scenarios  (MJ)
 #for(u in 1:nrow(mType)){
-u <- 5  #pick an arbitrary scenario (ML)
+start.time <- Sys.time()
+for (jj in 1:length(nrepProcess)) {
+u <- 91  #pick an arbitrary scenario (ML)
 
   
   ## Generate some data. This will be used to fit a stock
@@ -189,10 +198,10 @@ u <- 5  #pick an arbitrary scenario (ML)
   SR_stats_i <- list()
   for(d in seq_along(egscalar)){
     # set.seed(d + roundrand)   ## can't remember rational for this
-    pmsave <- matrix(NA, nrow=nrepProcess, ncol=8+1) #+1 for EG
+    pmsave <- matrix(NA, nrow=nrepProcess[jj], ncol=8+1) #+1 for EG
     
     i <- 1
-    while(i <= nrepProcess){
+    while(i <= nrepProcess[jj]){
       inputs$com <- comInit
       srdat <- try(do.call(process, inputs))
       if(class(srdat) == 'try-error'){
@@ -275,16 +284,16 @@ u <- 5  #pick an arbitrary scenario (ML)
           
           rat <- sum(log(alpha) / beta) / prodSampEst
 
-          SR_stats_i[[i]] <- c(u, i, # ~!!!!!unc[u] need name??
+          SR_stats_i[[i]] <- c(u, i, nrepProcess[jj],# ~!!!!!unc[u] need name??
                                Rpar[1], Rpar[2],
                                Smsy*rat, use.names=FALSE)
         }
         i <- i+1
       }
-      if(i > 4*nrepProcess){
+      if(i > 4*nrepProcess[jj]){
         stop('i > 4*nrepProcess')
       }
-      if(i %*% 5 == 0) print(paste(i, '/', nrepProcess))
+      if(i %*% 5 == 0) print(paste(i, '/', nrepProcess[jj]))
     }
     
     # save results for that scalar
@@ -292,80 +301,27 @@ u <- 5  #pick an arbitrary scenario (ML)
     pmsd[d,] <- apply(pmsave, 2, sd)
     
   }
-  SR_stats_lst[[u]] <- do.call(rbind, SR_stats_i)
+  SR_stats_lst[[jj]] <- do.call(rbind, SR_stats_i)
   pmU[u,,] <- pmEG
   pmV[u,,] <- pmsd
   
-# }  end of former monitorting scenario loop (MJ)
+} # end of loop over replicate numbers (MJ)
 
 SR_stats <- do.call(rbind, SR_stats_lst)
-colnames(SR_stats) <- c('scen', 'i', 'a', 'b', 'SMSY')
+colnames(SR_stats) <- c('scen', 'i', '#reps','a', 'b', 'SMSY')
 
-#define y range for plotting harvest and escapement
-if(plotvar){
-  yrg_eschar <- range(pmU[,,1], pmU[,,2], 
-                      pmU[,,1] + pmV[,,1], pmU[,,1] - pmV[,,1],
-                      pmU[,,2] + pmV[,,2], pmU[,,2] - pmV[,,2])
-  yrg_cvCatch <- range(pmU[,,7] + pmV[,,7],
-                       pmU[,,7] - pmV[,,7])
-  pmVplot <- pmV
-}else{
-  yrg_eschar <- range(pmU[,,1], pmU[,,2])
-  yrg_cvCatch <- range(pmU[,,7])
-  pmVplot <- NULL
-}
+SMSY_est <- tapply(SR_stats[,'SMSY'], SR_stats[,'#reps'], mean)
+SMSY_reps <- tapply(SR_stats[,'#reps'],SR_stats[,'#reps'], mean)
+#plot(SMSY_est ~ SMSY_reps, ylim=c(0,15000))
+boxplot(SR_stats[,'SMSY'] ~ SR_stats[,'#reps'],
+        xlab='Number of replicates', ylab='Smsy estimate', 
+        ylim = c(0,15000), outline=FALSE)
 
+# Correct method for estimating multistock Smsy
+U_range <- seq(0, 1, 0.01)
+Seq = sapply(U_range, function(x) eq_ricker(alpha, beta, x)$S)
+Ceq = sapply(U_range, function(x) eq_ricker(alpha, beta, x)$C)
+Smsy_multi <- Seq[which.max(Ceq)]
+abline(h = Smsy_multi)
+end.time <- Sys.time()
 
-legtxt <- paste0('s', 1:nrow(mType))
-rgx <- c(0, max(pmU[,,9]))
-
-
-
-mean(log(alpha)/beta*(0.5-0.07*log(alpha)))
-
-
-rnn <- round(runif(1, min=1000000, max=9000000))
-save.image(paste0(wdir, '/out', 'rnn', '.Rdata'))
-
-dir.create('./fig', showWarnings = FALSE)
-
-if(!unix){
-  mres <- pmU
-  metaType <- list(mType)
-  metaNS <- list(ns)
-#  source('ms_plot.r')   
-#  source('../get_utility.r')
-}
-
-
-
-
-cat(
-    'mType', mType,
-    'egscalar', egscalar,
-    'nrepProcess', nrepProcess,
-    'ny', ny,
-    'sryrs', sryrs,
-    # 'sdlog_e', sdlog_e,
-    # 'sdlog_h', sdlog_h,
-    # 'ess_paa_e', ess_paa_e,
-    # 'ess_paa_h', ess_paa_h,
-    'alpha', alpha,
-    'beta', beta,
-    'Ro', Ro,
-    'rho', rho,
-    'phi', phi,
-    'Preturn', Preturn,
-    'episd', episd,
-    'U', U,
-    'sub', sub,
-    'com', com,
-    'egfloor', egfloor,
-    'pm.yr', pm.yr,
-    'for.error', for.error,
-    'OU', OU,
-    'TV', TV,
-    sep='\n',
-    file = paste0(wdir, '/param.txt'),
-    append = FALSE
-)
