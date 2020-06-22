@@ -26,33 +26,45 @@ ns <- 1:13
 # options are "high" "low or "none"
 sbias <- 'none'
 
-# CVs for aerial surveys [1] and weirs [2] and ESS for weirs
-# and correlations btw aerial surveys and weirs
-cvAW <- c(1,.1) # turn off assessment error c(1, 0.1)
+
+# escapement goal scalars
+#egscalar <- seq(from=0.01, to=2, length.out=5)
+
 # rhoAA <- 0.1
 # rhoAW <- 0.75
 # rhoWW <- 0.01
+# number of repetitions to average the results over for each combination
+# of mType and EG
+nrepProcess <- c(50, 100, 250, 500)
+# CVs for aerial surveys [1] and weirs [2] and ESS for weirs
+# and correlations btw aerial surveys and weirs
+cvAW <- c(.1,.1) # turn off assessment error c(1, 0.1)
+
 ESS <- 50
 abias <- 0 # percent bias for aerial surveys
 
 # CV for the harvest of every stock
-cvH <- 0.2 # turn off harvest error 0.2   ###
+cvH <- 0.2  # turn off harvest error 0.2   ###
 
-# escapement goal scalars
-egscalar <- seq(from=0.01, to=2, length.out=5)
+#S-R process error
+episd = 0.6  # should be... 0.6
 
-# number of repetitions to average the results over for each combination
-# of mType and EG
-nrepProcess <- c(5 ,10, 25, 50, 100) #, 250)
+# uncertainty in the scalar of Smsy
+# sirat_sd <- 'yes'
+stock_scale_err <- 'yes'
+
+# monitoring scenario
+u_scen <- 7
+
+#describe scenario
+scenario <- list(cvAW=cvAW, cvH=cvH, procerr=episd, scaleerr=stock_scale_err, scen=u_scen)
+print(scenario)
 
 # number of simulation years (greater than 50)
 ny <- 150
 
 # number of years to use to fit SR model
 sryrs <- 30
-
-# uncertainty in the scalar of Smsy
-# sirat_sd <- 0
 
 # Do you want to include sd on the plots?
 plotvar <- FALSE
@@ -111,7 +123,7 @@ Ro = 2*log(alpha)/beta
 rho = 0.4 # among-stock correlation
 phi = 0.65 #0.85 # annual correlation
 Preturn = c(.2, .39, .38, .03)
-episd = 0.01  # should be... 0.6
+# episd = 0.01  # moved earlier
 U = 0.1 #doesn't matteR???
 sub = 0 #42500
 com = 1e6#35000
@@ -155,7 +167,7 @@ SR_stats_lst <- list()
 #for(u in 1:nrow(mType)){
 start.time <- Sys.time()
 for (jj in 1:length(nrepProcess)) {
-u <- 91  #pick an arbitrary scenario (ML)
+u <- u_scen #pick an arbitrary scenario (ML)
 
   
   ## Generate some data. This will be used to fit a stock
@@ -188,7 +200,7 @@ u <- 91  #pick an arbitrary scenario (ML)
     cvH = cvH,
     ESS = ESS,
     abias = abias,
-    # sirat_sd=sirat_sd,
+    sirat_sd=sirat_sd,
 		dg = TRUE
   )
   
@@ -196,7 +208,8 @@ u <- 91  #pick an arbitrary scenario (ML)
   pmsd <- matrix(NA, length(egscalar), 8+1)
   
   SR_stats_i <- list()
-  for(d in seq_along(egscalar)){
+  d <- 1  #just use a single escapement goal
+  # for(d in seq_along(egscalar)){
     # set.seed(d + roundrand)   ## can't remember rational for this
     pmsave <- matrix(NA, nrow=nrepProcess[jj], ncol=8+1) #+1 for EG
     
@@ -207,7 +220,7 @@ u <- 91  #pick an arbitrary scenario (ML)
       if(class(srdat) == 'try-error'){
         break
       }
-      
+
       #### fit an assessment model ####
       
       # spawning stock: just SB_e
@@ -228,7 +241,6 @@ u <- 91  #pick an arbitrary scenario (ML)
       
       # don't need to match S&R indices because just using
       # the end of both series
-      
       R <- tail(R, sryrs)
       S <- tail(srdat$SB_e[1:(ny-7)], sryrs)
    
@@ -252,18 +264,17 @@ u <- 91  #pick an arbitrary scenario (ML)
       Smsy <- Rpar[2] * (0.5 - 0.07 * Rpar[1])
 
       if(Smsy > 0){
-        
-        inputs2 <- inputs
-        inputs2$egfloor <- Smsy * egscalar[d]
-        inputs2$com <- com
-				inputs2$dg <- FALSE # no longer data generating phase
+ # comment out second phase       
+ #       inputs2 <- inputs
+ #       inputs2$egfloor <- Smsy * egscalar[d]
+ #       inputs2$com <- com
+ #       inputs2$dg <- FALSE # no longer data generating phase
     
 
-        srdat2 <- try(do.call(process, inputs2))
-        if(class(srdat2) == 'try-error') break
-        
+ #       srdat2 <- try(do.call(process, inputs2))
+ #      if(class(srdat2) == 'try-error') break
         # add the actual escapement to the performance measures.
-        pmsave[i,] <- c(srdat2$PMs, inputs2$egfloor)
+  #      pmsave[i,] <- c(srdat2$PMs, inputs2$egfloor)
         if(d == 1){ # only bother with this in round 1 ... EG scalar
                     # does not play a role here.
           mstock <- which(mType[u,] > 0)
@@ -280,8 +291,10 @@ u <- 91  #pick an arbitrary scenario (ML)
           cv <- K / sqrt(prodSamp)
           cvSummary <- c(cvSummary, cv)
           require(msm)
-          prodSampEst <- rtnorm(1, mean=prodSamp, sd=cv*prodSamp, lower=0)
-          
+          if (stock_scale_err == 'yes') {
+            prodSampEst <- rtnorm(1, mean=prodSamp, sd=cv*prodSamp, lower=0)
+          }
+          else {prodSampEst <- prodSamp}
           rat <- sum(log(alpha) / beta) / prodSampEst
 
           SR_stats_i[[i]] <- c(u, i, nrepProcess[jj],# ~!!!!!unc[u] need name??
@@ -300,7 +313,7 @@ u <- 91  #pick an arbitrary scenario (ML)
     pmEG[d,] <- apply(pmsave, 2, mean)
     pmsd[d,] <- apply(pmsave, 2, sd)
     
-  }
+#  }
   SR_stats_lst[[jj]] <- do.call(rbind, SR_stats_i)
   pmU[u,,] <- pmEG
   pmV[u,,] <- pmsd
@@ -310,18 +323,33 @@ u <- 91  #pick an arbitrary scenario (ML)
 SR_stats <- do.call(rbind, SR_stats_lst)
 colnames(SR_stats) <- c('scen', 'i', '#reps','a', 'b', 'SMSY')
 
-SMSY_est <- tapply(SR_stats[,'SMSY'], SR_stats[,'#reps'], mean)
-SMSY_reps <- tapply(SR_stats[,'#reps'],SR_stats[,'#reps'], mean)
-#plot(SMSY_est ~ SMSY_reps, ylim=c(0,15000))
-boxplot(SR_stats[,'SMSY'] ~ SR_stats[,'#reps'],
-        xlab='Number of replicates', ylab='Smsy estimate', 
-        ylim = c(0,15000), outline=FALSE)
-
-# Correct method for estimating multistock Smsy
+#get true MSY
 U_range <- seq(0, 1, 0.01)
 Seq = sapply(U_range, function(x) eq_ricker(alpha, beta, x)$S)
 Ceq = sapply(U_range, function(x) eq_ricker(alpha, beta, x)$C)
 Smsy_multi <- Seq[which.max(Ceq)]
-abline(h = Smsy_multi)
+
+#summarize estimates for each set of simulations
+SMSY_est <- tapply(SR_stats[,'SMSY'], SR_stats[,'#reps'], mean)
+SMSY_median <- tapply(SR_stats[,'SMSY'], SR_stats[,'#reps'], median)
+SMSY_reps <- tapply(SR_stats[,'#reps'],SR_stats[,'#reps'], mean)
+SMSY_SD <- tapply(SR_stats[,'SMSY'], SR_stats[,'#reps'], sd)
+
+#plot means and standard deviations
+plot(SMSY_est ~ SMSY_reps, ylim=c(0,25000),
+     xlab="Number of simulations", ylab="Smsy estimate (mean + sd)")
+arrows(SMSY_reps,SMSY_est-SMSY_SD,SMSY_reps,SMSY_est+SMSY_SD,
+       code=3, angle=90, length=.05)
+abline(h = Smsy_multi)  #true multistock MSY
+points(SMSY_median ~ SMSY_reps, pch=17)
+points(300,23000,pch=17)
+text(322,23500, 'median', adj=0, cex=.75)
+#boxplot(SR_stats[,'SMSY'] ~ SR_stats[,'#reps'],
+#       xlab='Number of replicates', ylab='Smsy estimate', 
+#      ylim = c(0,20000), outline=FALSE)
+#abline(h = Smsy_multi)
+
 end.time <- Sys.time()
+print(end.time-start.time)
+
 

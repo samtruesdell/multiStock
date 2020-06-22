@@ -32,7 +32,7 @@ process = function(ny,Ro,rho,phi,Preturn,episd,U,alpha,bet,sub,
                    cvH,
                    ESS,
                    abias,
-                   # sirat_sd,
+                   sirat_sd,
                    dg=FALSE # indicates if model in data-generating phase. If so don't
                    # let harvest rates get too high.
 ){
@@ -128,14 +128,19 @@ process = function(ny,Ro,rho,phi,Preturn,episd,U,alpha,bet,sub,
     # 
     # ## Check that rat_p is the whole-stock Smsy based on
     # Ben's material that he sent.
-    rat_p <- sum(log(alpha[mstock]) / beta[mstock]) / 
-      sum(log(alpha) / beta)
+    # MLJ: remove these calculations - they shouldn't affect
+    #      the data generation phase
+#    if (sirat_sd == 'yes') {
+#      rat_p <- sum(log(alpha[mstock]) / beta[mstock]) / 
+#        sum(log(alpha) / beta)
+#      rat_se <- sqrt(rat_p * (1 - rat_p)/length(alpha))/rat_p
+#      sirat_error <- rlnorm(1, meanlog=log(rat_p)-rat_se^2/2, 
+#                            sdlog=rat_se)
+#      }
+#    else {sirat_error <-  1  } # turn off uncert due to scaling... 
+
     
-    rat_se <- sqrt(rat_p * (1 - rat_p)/length(alpha))/rat_p
-    sirat_error <- rlnorm(1, meanlog=log(rat_p)-rat_se^2/2, 
-                          sdlog=rat_se)
-    
-    egfloorV[i] <- egfloorV[i] * sirat_error
+#    egfloorV[i] <- egfloorV[i] * sirat_error
     # get the harvest rate
     HR= sub_hcr(sub,com,egfloorV[i],sum(Ntot[i,]),for.error,OU, dg=dg)
     H[i,] = HR*Ntot[i,] # Harvest number
