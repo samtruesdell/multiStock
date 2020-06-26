@@ -28,17 +28,25 @@ sbias <- 'none'
 
 
 # escapement goal scalars
-#egscalar <- seq(from=0.01, to=2, length.out=5)
+egscalar <- seq(from=0.01, to=2, length.out=5)
 
 # rhoAA <- 0.1
 # rhoAW <- 0.75
 # rhoWW <- 0.01
 # number of repetitions to average the results over for each combination
 # of mType and EG
-nrepProcess <- c(50, 100, 250, 500)
+nrepProcess <- c(500) #, 100, 250, 500)
+
+nstock_msy <- numeric()
+mean_msy <- numeric() 
+med_msy <- numeric() 
+sd_msy <- numeric()
+lqt_msy <- numeric()
+uqt_msy <- numeric()
+
 # CVs for aerial surveys [1] and weirs [2] and ESS for weirs
 # and correlations btw aerial surveys and weirs
-cvAW <- c(.1,.1) # turn off assessment error c(1, 0.1)
+cvAW <- c(1,.1) # turn off assessment error c(1, 0.1)
 
 ESS <- 50
 abias <- 0 # percent bias for aerial surveys
@@ -54,7 +62,8 @@ episd = 0.6  # should be... 0.6
 stock_scale_err <- 'yes'
 
 # monitoring scenario
-u_scen <- 7
+#u_scen <- c(2,4,7,11,16,22,29,37,46,56,67,79)  # one weir
+u_scen <- c(1,3,6,10,15,21,28,36,45,55,66,78,91)  #all weirs
 
 #describe scenario
 scenario <- list(cvAW=cvAW, cvH=cvH, procerr=episd, scaleerr=stock_scale_err, scen=u_scen)
@@ -91,7 +100,7 @@ bbounds <- matrix(c(0.001, 0.003,
                   nrow = 3, byrow = TRUE)
 
 # test: set alpha and beta the same for all stocks
-abounds <- matrix(rep(20,6),
+abounds <- matrix(rep(4.6,6),
                   nrow = 3, byrow = TRUE)
 
 bbounds <- matrix(rep(.001,6),
@@ -141,8 +150,6 @@ require(mvtnorm)
 require(Matrix)
 
 
-# Determine which stocks will be monitored in this run
-mType <- stock2mon(nstock = max(ns))
 
 
 if(pm.yr > (ny-50)){
@@ -163,18 +170,16 @@ cvSummary <- numeric(0)
 pmU <- array(data=NA, dim=c(nrow(mType), length(egscalar), 8+1))
 pmV <- array(data=NA, dim=c(nrow(mType), length(egscalar), 8+1))
 SR_stats_lst <- list()
-#get rid of loop over monitoring scenarios  (MJ)
-#for(u in 1:nrow(mType)){
-start.time <- Sys.time()
-for (jj in 1:length(nrepProcess)) {
-u <- u_scen #pick an arbitrary scenario (ML)
 
+start.time <- Sys.time()
+for (u in u_scen) { #loop over monitoring scenarios (ML)
+
+for (jj in 1:length(nrepProcess)) {  #loop over sets of replicate simulations
   
   ## Generate some data. This will be used to fit a stock
   ## recruitment function to. There will be some error
   ## in the output for harvest.
-  
-  
+
   inputs <- list(
     alpha = alpha,
     bet = beta,
@@ -200,7 +205,6 @@ u <- u_scen #pick an arbitrary scenario (ML)
     cvH = cvH,
     ESS = ESS,
     abias = abias,
-    sirat_sd=sirat_sd,
 		dg = TRUE
   )
   
@@ -214,8 +218,17 @@ u <- u_scen #pick an arbitrary scenario (ML)
     pmsave <- matrix(NA, nrow=nrepProcess[jj], ncol=8+1) #+1 for EG
     
     i <- 1
-    while(i <= nrepProcess[jj]){
+    while(i <= nrepProcess[jj]){   # loop over replicates
+      # re-sample the set of alpha and beta values for each replicate simulation
+      #alpha <- sample(aval)
+      #beta <- sample(bval)
+      # Determine which stocks will be monitored in this run
+      # I have moved this into the simulation iteration loop to
+      # re-sample the stocks monitored for each replication (MLJ)
+      mType <- stock2mon(nstock = max(ns))      
+      
       inputs$com <- comInit
+      inputs$mTypeV <- mType[u,]
       srdat <- try(do.call(process, inputs))
       if(class(srdat) == 'try-error'){
         break
@@ -334,16 +347,35 @@ SMSY_est <- tapply(SR_stats[,'SMSY'], SR_stats[,'#reps'], mean)
 SMSY_median <- tapply(SR_stats[,'SMSY'], SR_stats[,'#reps'], median)
 SMSY_reps <- tapply(SR_stats[,'#reps'],SR_stats[,'#reps'], mean)
 SMSY_SD <- tapply(SR_stats[,'SMSY'], SR_stats[,'#reps'], sd)
+SMSY_qt <- tapply(SR_stats[,'SMSY'],SR_stats[,'#reps'], quantile)
+nstock_msy <- c(nstock_msy,length(which(mType[u,]>0)))
+mean_msy <- c(mean_msy,SMSY_est[1])
+med_msy <- c(med_msy,SMSY_median[1])
+sd_msy <- c(sd_msy,SMSY_SD[1])
+lqt_msy <- c(lqt_msy, SMSY_qt[[1]][2])
+uqt_msy <- c(uqt_msy, SMSY_qt[[1]][4])
+}  #end of loop over monitoring scenarios
 
-#plot means and standard deviations
-plot(SMSY_est ~ SMSY_reps, ylim=c(0,25000),
-     xlab="Number of simulations", ylab="Smsy estimate (mean + sd)")
-arrows(SMSY_reps,SMSY_est-SMSY_SD,SMSY_reps,SMSY_est+SMSY_SD,
+SMSY_summary <- data.frame(nstock_msy,mean_msy,med_msy,sd_msy,lqt_msy, uqt_msy)
+
+
+plot(SMSY_summary$med_msy~SMSY_summary$nstock_msy, ylim=c(5000,18000),
+     xlab = '# of stocks monitored', ylab = 'Smsy estimate (median)',
+     main = 'All weirs')
+arrows(SMSY_summary$nstock_msy, SMSY_summary$lqt_msy,
+       SMSY_summary$nstock_msy, SMSY_summary$uqt_msy,
        code=3, angle=90, length=.05)
 abline(h = Smsy_multi)  #true multistock MSY
-points(SMSY_median ~ SMSY_reps, pch=17)
-points(300,23000,pch=17)
-text(322,23500, 'median', adj=0, cex=.75)
+#text(1,10000, 'true Smsy', adj=0, cex=0.75)
+#plot means and standard deviations
+#plot(SMSY_est ~ SMSY_reps, ylim=c(0,25000),
+#     xlab="Number of simulations", ylab="Smsy estimate (mean + sd)")
+#arrows(SMSY_reps,SMSY_est-SMSY_SD,SMSY_reps,SMSY_est+SMSY_SD,
+#       code=3, angle=90, length=.05)
+#abline(h = Smsy_multi)  #true multistock MSY
+#points(SMSY_median ~ SMSY_reps, pch=17)
+#points(300,23000,pch=17)
+#text(322,23500, 'median', adj=0, cex=.75)
 #boxplot(SR_stats[,'SMSY'] ~ SR_stats[,'#reps'],
 #       xlab='Number of replicates', ylab='Smsy estimate', 
 #      ylim = c(0,20000), outline=FALSE)

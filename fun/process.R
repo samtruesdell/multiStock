@@ -32,7 +32,6 @@ process = function(ny,Ro,rho,phi,Preturn,episd,U,alpha,bet,sub,
                    cvH,
                    ESS,
                    abias,
-                   sirat_sd,
                    dg=FALSE # indicates if model in data-generating phase. If so don't
                    # let harvest rates get too high.
 ){
